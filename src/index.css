@@ -27,7 +27,13 @@ body {
 .page {
   max-width: 1180px;
   margin: 0 auto;
-  padding: 40px 24px 80px;
+  padding: 40px 24px 24px;
+  /* Bind the whole view to the viewport so the page itself never scrolls; the
+     table body is the only vertical scroller. */
+  height: 100vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 .page__head h1 {
@@ -48,9 +54,52 @@ body {
   font-weight: 700;
 }
 
+/* ── Tab navigation ── */
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 24px;
+}
+
+.tabs__btn {
+  appearance: none;
+  cursor: pointer;
+  text-decoration: none;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+  background: var(--panel);
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  padding: 8px 16px;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.tabs__btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.tabs__btn--active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.tabs__btn--active:hover {
+  color: #fff;
+}
+
 /* ── Demo sections ── */
-.demo + .demo {
-  margin-top: 44px;
+/* The active demo fills the leftover viewport height so its table body shrinks
+   to fit instead of pushing the page past one screen. */
+.demo {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .demo__head {
@@ -86,6 +135,11 @@ body {
   overflow-x: auto;
   overflow-y: hidden;
   box-shadow: 0 10px 30px -12px rgba(15, 23, 42, 0.25);
+  /* Take the demo's leftover height and let the body scroller shrink within it. */
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 /* The body is the only vertical scroller, so the vertical scrollbar sits beside
@@ -94,6 +148,10 @@ body {
 .table-body-scroll {
   overflow-x: hidden;
   overflow-y: auto;
+  /* Fill the wrap's remaining height (below the header table) and shrink with it
+     so the body — not the page — owns vertical scrolling. */
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .table {
@@ -106,6 +164,11 @@ body {
   table-layout: fixed;
   font-size: 13px;
   white-space: nowrap;
+}
+
+/* The header table keeps its natural height; only the body below it shrinks. */
+.table--head {
+  flex: 0 0 auto;
 }
 
 /* Clip overflowing content so a narrowed column doesn't bleed past its edge. */
@@ -121,7 +184,6 @@ body {
 thead .th {
   position: relative;
   padding: 0;
-  background: var(--group-a);
   border-bottom: 1px solid var(--line-strong);
   border-right: 1px solid var(--line);
   font-weight: 600;
@@ -130,7 +192,6 @@ thead .th {
 }
 
 thead tr:first-child .th {
-  background: var(--group-b);
   font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -138,7 +199,6 @@ thead tr:first-child .th {
 }
 
 thead tr:last-child .th {
-  background: #fff;
   font-weight: 600;
   color: var(--muted);
 }
@@ -147,7 +207,6 @@ thead tr:last-child .th {
    Center its label across the full height and drop the grouped-header styling. */
 thead .th--span-all {
   vertical-align: middle;
-  background: var(--group-b);
 }
 
 .th__inner {
@@ -257,17 +316,8 @@ thead .th--span-all {
   text-align: left;
 }
 
-.row:hover .td {
-  background: #f8fafc;
-}
-
 .row--depth-0 .td {
   font-weight: 600;
-  background: #f5f8ff;
-}
-
-.row--depth-0:hover .td {
-  background: #eef4ff;
 }
 
 .row--depth-1 .td:first-child {

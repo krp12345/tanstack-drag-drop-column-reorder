@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useSyncExternalStore, type ReactNode } from "react";
 import { DataTable } from "./DataTable";
 import { columns } from "./columns";
 import { salesData, type SalesRow } from "./data";
@@ -6,27 +6,76 @@ import { employeeColumns, employees } from "./demos/directory";
 import { budgetColumns, budgetData } from "./demos/budget";
 import { people, peopleColumns } from "./demos/people";
 
-function Demo({
-  title,
-  meta,
-  children,
-}: {
+type Route = {
+  id: string;
+  label: string;
   title: string;
   meta: string;
-  children: ReactNode;
-}) {
-  return (
-    <section className="demo">
-      <div className="demo__head">
-        <h2>{title}</h2>
-        <span className="demo__meta">{meta}</span>
-      </div>
-      {children}
-    </section>
-  );
+  render: () => ReactNode;
+};
+
+const routes: Route[] = [
+  {
+    id: "sales",
+    label: "Retail Sales",
+    title: "Retail Sales Analytics",
+    meta: "3 header levels · 4 row levels (Region ▸ Country ▸ City ▸ Store)",
+    render: () => (
+      <DataTable<SalesRow>
+        data={salesData}
+        columns={columns}
+        getSubRows={(row) => row.subRows}
+        expanderColumnId="location"
+      />
+    ),
+  },
+  {
+    id: "directory",
+    label: "Employee Directory",
+    title: "Employee Directory",
+    meta: "1 header level · flat rows (no getSubRows → no expander)",
+    render: () => <DataTable data={employees} columns={employeeColumns} />,
+  },
+  {
+    id: "budget",
+    label: "Budget",
+    title: "Budget Breakdown",
+    meta: "4 header levels · 3 row levels (Division ▸ Department ▸ Team)",
+    render: () => (
+      <DataTable
+        data={budgetData}
+        columns={budgetColumns}
+        getSubRows={(row) => row.subRows}
+        expanderColumnId="org"
+      />
+    ),
+  },
+  {
+    id: "people",
+    label: "People",
+    title: "People (Virtualized)",
+    meta: "10,000 flat rows · only the visible window is mounted",
+    render: () => <DataTable data={people} columns={peopleColumns} />,
+  },
+];
+
+function subscribe(callback: () => void) {
+  window.addEventListener("hashchange", callback);
+  return () => window.removeEventListener("hashchange", callback);
+}
+
+function getHashRoute() {
+  return window.location.hash.replace(/^#\/?/, "");
+}
+
+function useRoute(): Route {
+  const id = useSyncExternalStore(subscribe, getHashRoute);
+  return routes.find((route) => route.id === id) ?? routes[0];
 }
 
 export function App() {
+  const active = useRoute();
+
   return (
     <div className="page">
       <header className="page__head">
@@ -39,43 +88,28 @@ export function App() {
         </p>
       </header>
 
-      <Demo
-        title="Retail Sales Analytics"
-        meta="3 header levels · 4 row levels (Region ▸ Country ▸ City ▸ Store)"
-      >
-        <DataTable<SalesRow>
-          data={salesData}
-          columns={columns}
-          getSubRows={(row) => row.subRows}
-          expanderColumnId="location"
-        />
-      </Demo>
+      <nav className="tabs">
+        {routes.map((route) => (
+          <a
+            key={route.id}
+            href={`#/${route.id}`}
+            className={
+              route.id === active.id ? "tabs__btn tabs__btn--active" : "tabs__btn"
+            }
+            aria-current={route.id === active.id ? "page" : undefined}
+          >
+            {route.label}
+          </a>
+        ))}
+      </nav>
 
-      <Demo
-        title="Employee Directory"
-        meta="1 header level · flat rows (no getSubRows → no expander)"
-      >
-        <DataTable data={employees} columns={employeeColumns} />
-      </Demo>
-
-      <Demo
-        title="Budget Breakdown"
-        meta="4 header levels · 3 row levels (Division ▸ Department ▸ Team)"
-      >
-        <DataTable
-          data={budgetData}
-          columns={budgetColumns}
-          getSubRows={(row) => row.subRows}
-          expanderColumnId="org"
-        />
-      </Demo>
-
-      <Demo
-        title="People (Virtualized)"
-        meta="10,000 flat rows · only the visible window is mounted"
-      >
-        <DataTable data={people} columns={peopleColumns} />
-      </Demo>
+      <section className="demo">
+        <div className="demo__head">
+          <h2>{active.title}</h2>
+          <span className="demo__meta">{active.meta}</span>
+        </div>
+        {active.render()}
+      </section>
     </div>
   );
 }
