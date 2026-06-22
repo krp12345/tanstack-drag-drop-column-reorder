@@ -1,0 +1,225 @@
+:root {
+  --bg: #0f172a;
+  --panel: #ffffff;
+  --ink: #1e293b;
+  --muted: #64748b;
+  --line: #e2e8f0;
+  --line-strong: #cbd5e1;
+  --accent: #2563eb;
+  --accent-soft: #dbeafe;
+  --group-a: #f1f5f9;
+  --group-b: #e2e8f0;
+
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  color: var(--ink);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: linear-gradient(180deg, #f8fafc 0%, #eef2f7 100%);
+  min-height: 100vh;
+}
+
+.page {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 40px 24px 80px;
+}
+
+.page__head h1 {
+  margin: 0 0 6px;
+  font-size: 26px;
+  letter-spacing: -0.02em;
+}
+
+.page__head p {
+  margin: 0 0 24px;
+  color: var(--muted);
+  max-width: 760px;
+  line-height: 1.5;
+}
+
+.grip-inline {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+/* ── Table shell ── */
+.table-wrap {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  overflow: auto;
+  box-shadow: 0 10px 30px -12px rgba(15, 23, 42, 0.25);
+}
+
+.table {
+  border-collapse: separate;
+  border-spacing: 0;
+  width: 100%;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+/* ── Headers ── */
+thead .th {
+  position: relative;
+  padding: 0;
+  background: var(--group-a);
+  border-bottom: 1px solid var(--line-strong);
+  border-right: 1px solid var(--line);
+  font-weight: 600;
+  text-align: left;
+  color: var(--ink);
+}
+
+thead tr:first-child .th {
+  background: var(--group-b);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #334155;
+}
+
+thead tr:last-child .th {
+  background: #fff;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.th__inner {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 12px;
+  user-select: none;
+}
+
+.th--draggable .th__inner {
+  cursor: default;
+}
+
+.th--dragging {
+  opacity: 0.45;
+}
+
+.th--drop {
+  background: var(--accent-soft) !important;
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.grip {
+  cursor: grab;
+  color: var(--line-strong);
+  font-size: 14px;
+  line-height: 1;
+  padding: 2px;
+  border-radius: 4px;
+  transition: color 0.15s, background 0.15s;
+}
+
+.grip:hover {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.grip:active {
+  cursor: grabbing;
+}
+
+.th__label {
+  flex: 1;
+}
+
+/* ── Body ── */
+.td {
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--line);
+  border-right: 1px solid var(--line);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+/* Location (expander) column reads left-aligned. */
+.td:first-child {
+  text-align: left;
+}
+
+.row:hover .td {
+  background: #f8fafc;
+}
+
+.row--depth-0 .td {
+  font-weight: 600;
+  background: #f5f8ff;
+}
+
+.row--depth-0:hover .td {
+  background: #eef4ff;
+}
+
+.row--depth-1 .td:first-child {
+  color: #1e293b;
+}
+
+.row--depth-2 .td:first-child,
+.row--depth-3 .td:first-child {
+  color: var(--muted);
+}
+
+/* ── Expander ── */
+.expander {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.expander__btn {
+  appearance: none;
+  border: 1px solid var(--line-strong);
+  background: #fff;
+  color: var(--accent);
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 11px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.expander__btn:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+.expander__leaf {
+  width: 22px;
+  height: 22px;
+  flex: 0 0 auto;
+  position: relative;
+}
+
+.expander__leaf::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--line-strong);
+  transform: translate(-50%, -50%);
+}
+
+.expander__label {
+  font-weight: inherit;
+}
