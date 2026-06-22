@@ -103,13 +103,10 @@ thead tr:last-child .th {
   cursor: default;
 }
 
-.th--dragging {
-  opacity: 0.45;
-}
-
-.th--drop {
-  background: var(--accent-soft) !important;
-  box-shadow: inset 3px 0 0 var(--accent);
+/* The column currently being dragged stays in flow and travels live as the
+   cursor reorders the table around it. */
+.table-wrap--dragging .grip {
+  cursor: grabbing;
 }
 
 .grip {

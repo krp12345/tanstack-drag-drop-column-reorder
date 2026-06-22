@@ -18,9 +18,9 @@ import {
   useSensors,
   useDraggable,
   useDroppable,
-  type DragEndEvent,
+  type DragOverEvent,
+  type DragStartEvent,
 } from "@dnd-kit/core";
-import { restrictToHorizontalAxis } from "@dnd-kit/modifiers";
 
 const ROOT = "__root__";
 
@@ -79,36 +79,32 @@ function DraggableHeader<T>({
 }) {
   const meta = headerMeta(header);
 
-  const { attributes, listeners, setNodeRef: dragRef, isDragging } =
-    useDraggable({ id: header.id, data: meta, disabled: !draggable });
-
-  const { setNodeRef: dropRef, isOver, active } = useDroppable({
+  const { attributes, listeners, setNodeRef: dragRef } = useDraggable({
     id: header.id,
     data: meta,
+    disabled: !draggable,
   });
 
-  // Only sibling headers (same parent) accept the drop, so groups stay whole.
-  const activeParent = (active?.data.current as HeaderMeta | undefined)?.parentId;
-  const isValidTarget =
-    isOver && active?.id !== header.id && activeParent === meta.parentId;
+  // Every header is also a drop zone; the cursor crossing it reorders live.
+  const { setNodeRef: dropRef } = useDroppable({ id: header.id, data: meta });
 
   return (
     <th
       ref={dropRef}
       colSpan={header.colSpan}
-      className={[
-        "th",
-        draggable ? "th--draggable" : "",
-        isDragging ? "th--dragging" : "",
-        isValidTarget ? "th--drop" : "",
-      ]
+      className={["th", draggable ? "th--draggable" : ""]
         .filter(Boolean)
         .join(" ")}
     >
       {header.isPlaceholder ? null : (
         <div className="th__inner" ref={dragRef}>
           {draggable && (
-            <span className="grip" {...attributes} {...listeners} title="Drag to reorder">
+            <span
+              className="grip"
+              {...attributes}
+              {...listeners}
+              title="Drag to reorder"
+            >
               ⠿
             </span>
           )}
@@ -155,6 +151,7 @@ export function DataTable<T>({
 }: DataTableProps<T>) {
   const [columnOrder, setColumnOrder] = useState<ColumnOrderState>([]);
   const [expanded, setExpanded] = useState<ExpandedState>({});
+  const [activeHeaderId, setActiveHeaderId] = useState<string | null>(null);
 
   const table: Table<T> = useReactTable({
     data,
@@ -167,14 +164,21 @@ export function DataTable<T>({
     getExpandedRowModel: getExpandedRowModel(),
   });
 
-  const expanderId =
-    expanderColumnId ?? table.getAllLeafColumns()[0]?.id;
+  const expanderId = expanderColumnId ?? table.getAllLeafColumns()[0]?.id;
+
+  const dragging = activeHeaderId !== null;
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } })
   );
 
-  function handleDragEnd(event: DragEndEvent) {
+  function handleDragStart(event: DragStartEvent) {
+    setActiveHeaderId(String(event.active.id));
+  }
+
+  // The cursor only decides order: as it crosses a sibling header, reorder the
+  // real columns in place. Nothing detaches — the table itself rearranges live.
+  function handleDragOver(event: DragOverEvent) {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
 
@@ -182,17 +186,28 @@ export function DataTable<T>({
     const o = over.data.current as HeaderMeta | undefined;
     if (!a || !o || a.parentId !== o.parentId) return;
 
-    const order = table.getAllLeafColumns().map((c) => c.id);
-    setColumnOrder(reorderLeafBlock(order, a.leafIds, o.leafIds));
+    setColumnOrder((prev) => {
+      const order = prev.length
+        ? prev
+        : table.getAllLeafColumns().map((c) => c.id);
+      const next = reorderLeafBlock(order, a.leafIds, o.leafIds);
+      // Avoid pointless state churn when the order is already correct.
+      return next.length === order.length &&
+        next.every((id, i) => id === order[i])
+        ? order
+        : next;
+    });
   }
 
   return (
     <DndContext
       sensors={sensors}
-      modifiers={[restrictToHorizontalAxis]}
-      onDragEnd={handleDragEnd}
+      onDragStart={handleDragStart}
+      onDragOver={handleDragOver}
+      onDragEnd={() => setActiveHeaderId(null)}
+      onDragCancel={() => setActiveHeaderId(null)}
     >
-      <div className="table-wrap">
+      <div className={`table-wrap ${dragging ? "table-wrap--dragging" : ""}`}>
         <table className="table">
           <thead>
             {table.getHeaderGroups().map((headerGroup) => (
@@ -203,7 +218,9 @@ export function DataTable<T>({
                     header={header}
                     draggable={
                       !header.isPlaceholder &&
-                      header.column.getLeafColumns().every((c) => c.id !== expanderId)
+                      header.column
+                        .getLeafColumns()
+                        .every((c) => c.id !== expanderId)
                     }
                   />
                 ))}
