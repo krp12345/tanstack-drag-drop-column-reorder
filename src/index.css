@@ -120,16 +120,18 @@ thead tr:last-child .th {
 }
 
 /* A column with no header hierarchy spans every header row as one tall cell.
-   Keep its label aligned with the top row and drop the grouped-header styling. */
+   Center its label across the full height and drop the grouped-header styling. */
 thead .th--span-all {
-  vertical-align: top;
+  vertical-align: middle;
   background: var(--group-b);
 }
 
 .th__inner {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
+  height: 100%;
   padding: 9px 12px;
   user-select: none;
 }
@@ -165,6 +167,7 @@ thead .th--span-all {
 
 .th__label {
   flex: 1;
+  text-align: center;
 }
 
 /* ── Body ── */
