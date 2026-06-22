@@ -164,7 +164,12 @@ export function DataTable<T>({
     getExpandedRowModel: getExpandedRowModel(),
   });
 
-  const expanderId = expanderColumnId ?? table.getAllLeafColumns()[0]?.id;
+  // Only designate an expander column when the caller opted into row nesting.
+  // Without `getSubRows` the table renders perfectly flat — no indentation, no
+  // expand control — so the same component serves flat and nested data alike.
+  const expanderId = getSubRows
+    ? expanderColumnId ?? table.getAllLeafColumns()[0]?.id
+    : undefined;
 
   const dragging = activeHeaderId !== null;
 
