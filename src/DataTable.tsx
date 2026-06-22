@@ -73,9 +73,15 @@ function headerMeta<T>(header: Header<T, unknown>): HeaderMeta {
 function DraggableHeader<T>({
   header,
   draggable,
+  rowSpan,
+  showContent,
 }: {
   header: Header<T, unknown>;
   draggable: boolean;
+  /** When set, the cell spans this many header rows (see `isFullSpanColumn`). */
+  rowSpan?: number;
+  /** Whether to render the label; false for the empty placeholder cells. */
+  showContent: boolean;
 }) {
   const meta = headerMeta(header);
 
@@ -92,11 +98,16 @@ function DraggableHeader<T>({
     <th
       ref={dropRef}
       colSpan={header.colSpan}
-      className={["th", draggable ? "th--draggable" : ""]
+      rowSpan={rowSpan}
+      className={[
+        "th",
+        draggable ? "th--draggable" : "",
+        rowSpan ? "th--span-all" : "",
+      ]
         .filter(Boolean)
         .join(" ")}
     >
-      {header.isPlaceholder ? null : (
+      {showContent ? (
         <div className="th__inner" ref={dragRef}>
           {draggable && (
             <span
@@ -112,7 +123,7 @@ function DraggableHeader<T>({
             {flexRender(header.column.columnDef.header, header.getContext())}
           </span>
         </div>
-      )}
+      ) : null}
     </th>
   );
 }
@@ -173,6 +184,19 @@ export function DataTable<T>({
 
   const dragging = activeHeaderId !== null;
 
+  const headerGroups = table.getHeaderGroups();
+  const headerDepth = headerGroups.length;
+
+  // A top-level column with no parent and no child columns naturally lives in
+  // the very first header row, with empty placeholder cells stacked beneath it
+  // wherever the grouped columns go deeper. Instead of those blanks, render such
+  // a column once and let it `rowSpan` the full header depth so its label reads
+  // as a single tall cell aligned with the grouped headers.
+  const isFullSpanColumn = (header: Header<T, unknown>) =>
+    headerDepth > 1 &&
+    !header.column.parent &&
+    header.column.columns.length === 0;
+
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } })
   );
@@ -215,20 +239,34 @@ export function DataTable<T>({
       <div className={`table-wrap ${dragging ? "table-wrap--dragging" : ""}`}>
         <table className="table">
           <thead>
-            {table.getHeaderGroups().map((headerGroup) => (
+            {headerGroups.map((headerGroup, rowIndex) => (
               <tr key={headerGroup.id}>
-                {headerGroup.headers.map((header) => (
-                  <DraggableHeader
-                    key={header.id}
-                    header={header}
-                    draggable={
-                      !header.isPlaceholder &&
-                      header.column
-                        .getLeafColumns()
-                        .every((c) => c.id !== expanderId)
-                    }
-                  />
-                ))}
+                {headerGroup.headers.map((header) => {
+                  const fullSpan = isFullSpanColumn(header);
+                  // A full-span column is emitted once, in the first row only.
+                  if (fullSpan && rowIndex !== 0) return null;
+
+                  const showContent = !header.isPlaceholder || fullSpan;
+                  return (
+                    <DraggableHeader
+                      key={header.id}
+                      header={header}
+                      rowSpan={fullSpan ? headerDepth : undefined}
+                      showContent={showContent}
+                      // A full-span column is a top-level sibling that should
+                      // reorder among the other level-0 columns like any other
+                      // header — even when it doubles as the expander column,
+                      // which is otherwise locked in place.
+                      draggable={
+                        showContent &&
+                        (fullSpan ||
+                          header.column
+                            .getLeafColumns()
+                            .every((c) => c.id !== expanderId))
+                      }
+                    />
+                  );
+                })}
               </tr>
             ))}
           </thead>
