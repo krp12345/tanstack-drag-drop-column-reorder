@@ -16,6 +16,7 @@ import {
 import {
   DndContext,
   PointerSensor,
+  pointerWithin,
   useSensor,
   useSensors,
   useDraggable,
@@ -91,11 +92,12 @@ function DraggableHeader<T>({
 }) {
   const meta = headerMeta(header);
 
-  const { attributes, listeners, setNodeRef: dragRef } = useDraggable({
-    id: header.id,
-    data: meta,
-    disabled: !draggable,
-  });
+  const { attributes, listeners, setNodeRef: dragRef, isDragging } =
+    useDraggable({
+      id: header.id,
+      data: meta,
+      disabled: !draggable,
+    });
 
   // Every header is also a drop zone; the cursor crossing it reorders live.
   const { setNodeRef: dropRef } = useDroppable({ id: header.id, data: meta });
@@ -116,6 +118,7 @@ function DraggableHeader<T>({
         "th",
         draggable ? "th--draggable" : "",
         rowSpan ? "th--span-all" : "",
+        isDragging ? "th--dragging" : "",
       ]
         .filter(Boolean)
         .join(" ")}
@@ -294,6 +297,13 @@ export function DataTable<T>({
   return (
     <DndContext
       sensors={sensors}
+      // Reorder the instant the cursor crosses a column boundary: `pointerWithin`
+      // reports the header the pointer currently sits inside, so `over` flips to
+      // a neighbor the moment the drag passes that neighbor's near edge — the
+      // left edge of the column to the right, or the right edge of the column to
+      // the left. The default `rectIntersection` instead waits for the dragged
+      // cell's *box* to overlap a neighbor by more than half, which reads as lag.
+      collisionDetection={pointerWithin}
       onDragStart={handleDragStart}
       onDragOver={handleDragOver}
       onDragEnd={() => setActiveHeaderId(null)}
