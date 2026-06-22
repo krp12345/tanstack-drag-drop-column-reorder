@@ -4,6 +4,7 @@ import { columns } from "./columns";
 import { salesData, type SalesRow } from "./data";
 import { employeeColumns, employees } from "./demos/directory";
 import { budgetColumns, budgetData } from "./demos/budget";
+import { people, peopleColumns } from "./demos/people";
 
 function Demo({
   title,
@@ -67,6 +68,13 @@ export function App() {
           getSubRows={(row) => row.subRows}
           expanderColumnId="org"
         />
+      </Demo>
+
+      <Demo
+        title="People (Virtualized)"
+        meta="10,000 flat rows · only the visible window is mounted"
+      >
+        <DataTable data={people} columns={peopleColumns} />
       </Demo>
     </div>
   );

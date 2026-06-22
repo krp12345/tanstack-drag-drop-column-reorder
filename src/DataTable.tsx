@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   flexRender,
   getCoreRowModel,
@@ -6,6 +7,7 @@ import {
   useReactTable,
   type ColumnDef,
   type ColumnOrderState,
+  type ColumnSizingState,
   type ExpandedState,
   type Header,
   type Row,
@@ -31,6 +33,10 @@ export interface DataTableProps<T> {
   getSubRows?: (row: T) => T[] | undefined;
   /** Column that hosts the expand/collapse control. Defaults to the first column. */
   expanderColumnId?: string;
+  /** Viewport height (px) for the scrolling/virtualized body. Defaults to 460. */
+  maxHeight?: number;
+  /** Estimated row height (px) used to seed the virtualizer. Defaults to 37. */
+  estimateRowHeight?: number;
 }
 
 /**
@@ -94,11 +100,18 @@ function DraggableHeader<T>({
   // Every header is also a drop zone; the cursor crossing it reorders live.
   const { setNodeRef: dropRef } = useDroppable({ id: header.id, data: meta });
 
+  // A header can be resized when content is visible and the column allows it.
+  // Grouped headers resize their full span; leaf headers resize one column.
+  const canResize = showContent && header.column.getCanResize();
+  const isResizing = header.column.getIsResizing();
+
   return (
     <th
       ref={dropRef}
       colSpan={header.colSpan}
       rowSpan={rowSpan}
+      // Width comes from the <colgroup>; cells must not set their own width or
+      // grouped colSpan headers would reintroduce sibling redistribution.
       className={[
         "th",
         draggable ? "th--draggable" : "",
@@ -124,6 +137,19 @@ function DraggableHeader<T>({
           </span>
         </div>
       ) : null}
+      {canResize && (
+        <span
+          // Sits on the cell's right edge; dragging it resizes the column.
+          // dnd-kit only listens on the grip, so this never starts a reorder.
+          className={`resizer ${isResizing ? "resizer--active" : ""}`}
+          onMouseDown={header.getResizeHandler()}
+          onTouchStart={header.getResizeHandler()}
+          onDoubleClick={() => header.column.resetSize()}
+          role="separator"
+          aria-orientation="vertical"
+          title="Drag to resize · double-click to reset"
+        />
+      )}
     </th>
   );
 }
@@ -159,18 +185,24 @@ export function DataTable<T>({
   columns,
   getSubRows,
   expanderColumnId,
+  maxHeight = 460,
+  estimateRowHeight = 37,
 }: DataTableProps<T>) {
   const [columnOrder, setColumnOrder] = useState<ColumnOrderState>([]);
+  const [columnSizing, setColumnSizing] = useState<ColumnSizingState>({});
   const [expanded, setExpanded] = useState<ExpandedState>({});
   const [activeHeaderId, setActiveHeaderId] = useState<string | null>(null);
 
   const table: Table<T> = useReactTable({
     data,
     columns,
-    state: { columnOrder, expanded },
+    state: { columnOrder, columnSizing, expanded },
     onColumnOrderChange: setColumnOrder,
+    onColumnSizingChange: setColumnSizing,
     onExpandedChange: setExpanded,
     getSubRows,
+    // Resize live as the handle moves, rather than only on release.
+    columnResizeMode: "onChange",
     getCoreRowModel: getCoreRowModel(),
     getExpandedRowModel: getExpandedRowModel(),
   });
@@ -186,6 +218,36 @@ export function DataTable<T>({
 
   const headerGroups = table.getHeaderGroups();
   const headerDepth = headerGroups.length;
+
+  // ── Row virtualization ──
+  // The scroll viewport is the `.table-wrap` element. Only the rows inside the
+  // window (plus a small overscan) are mounted; everything above and below is
+  // accounted for by two spacer rows whose heights stand in for the unmounted
+  // rows, so the scrollbar and total height stay correct.
+  const rows = table.getRowModel().rows;
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const rowVirtualizer = useVirtualizer({
+    count: rows.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => estimateRowHeight,
+    overscan: 8,
+    // Measure each mounted row so variable heights (wrapped text, nested rows)
+    // stay accurate instead of trusting the estimate.
+    measureElement:
+      typeof window !== "undefined" &&
+      navigator.userAgent.indexOf("Firefox") === -1
+        ? (el) => el?.getBoundingClientRect().height
+        : undefined,
+  });
+
+  const virtualRows = rowVirtualizer.getVirtualItems();
+  const totalHeight = rowVirtualizer.getTotalSize();
+  // Height of the unmounted rows above the first / below the last visible row.
+  const paddingTop = virtualRows.length ? virtualRows[0].start : 0;
+  const paddingBottom = virtualRows.length
+    ? totalHeight - virtualRows[virtualRows.length - 1].end
+    : 0;
+  const leafCount = table.getVisibleLeafColumns().length;
 
   // A top-level column with no parent and no child columns naturally lives in
   // the very first header row, with empty placeholder cells stacked beneath it
@@ -236,8 +298,23 @@ export function DataTable<T>({
       onDragEnd={() => setActiveHeaderId(null)}
       onDragCancel={() => setActiveHeaderId(null)}
     >
-      <div className={`table-wrap ${dragging ? "table-wrap--dragging" : ""}`}>
-        <table className="table">
+      <div
+        ref={scrollRef}
+        className={`table-wrap ${dragging ? "table-wrap--dragging" : ""}`}
+        style={{ maxHeight }}
+      >
+        <table className="table" style={{ width: table.getTotalSize() }}>
+          {/* One <col> per leaf column is the single source of truth for column
+              widths. Under `table-layout: fixed` these per-column widths take
+              priority and are unambiguous — unlike cell widths, which the browser
+              derives from the first row only and divides equally across grouped
+              `colSpan` headers, causing a resize to reflow a column's siblings.
+              Resizing one column rewrites just its <col>, so no other moves. */}
+          <colgroup>
+            {table.getVisibleLeafColumns().map((col) => (
+              <col key={col.id} style={{ width: col.getSize() }} />
+            ))}
+          </colgroup>
           <thead>
             {headerGroups.map((headerGroup, rowIndex) => (
               <tr key={headerGroup.id}>
@@ -271,24 +348,45 @@ export function DataTable<T>({
             ))}
           </thead>
           <tbody>
-            {table.getRowModel().rows.map((row) => (
-              <tr key={row.id} className={`row row--depth-${row.depth}`}>
-                {row.getVisibleCells().map((cell) => (
-                  <td key={cell.id} className="td">
-                    {cell.column.id === expanderId ? (
-                      <ExpanderCell row={row}>
-                        {flexRender(
-                          cell.column.columnDef.cell,
-                          cell.getContext()
-                        )}
-                      </ExpanderCell>
-                    ) : (
-                      flexRender(cell.column.columnDef.cell, cell.getContext())
-                    )}
-                  </td>
-                ))}
+            {/* Top spacer: stands in for the rows scrolled off above. */}
+            {paddingTop > 0 && (
+              <tr aria-hidden className="row-spacer">
+                <td colSpan={leafCount} style={{ height: paddingTop }} />
               </tr>
-            ))}
+            )}
+            {virtualRows.map((virtualRow) => {
+              const row = rows[virtualRow.index];
+              return (
+                <tr
+                  key={row.id}
+                  // Let the virtualizer measure real heights and locate rows.
+                  data-index={virtualRow.index}
+                  ref={rowVirtualizer.measureElement}
+                  className={`row row--depth-${row.depth}`}
+                >
+                  {row.getVisibleCells().map((cell) => (
+                    <td key={cell.id} className="td">
+                      {cell.column.id === expanderId ? (
+                        <ExpanderCell row={row}>
+                          {flexRender(
+                            cell.column.columnDef.cell,
+                            cell.getContext()
+                          )}
+                        </ExpanderCell>
+                      ) : (
+                        flexRender(cell.column.columnDef.cell, cell.getContext())
+                      )}
+                    </td>
+                  ))}
+                </tr>
+              );
+            })}
+            {/* Bottom spacer: stands in for the rows scrolled off below. */}
+            {paddingBottom > 0 && (
+              <tr aria-hidden className="row-spacer">
+                <td colSpan={leafCount} style={{ height: paddingBottom }} />
+              </tr>
+            )}
           </tbody>
         </table>
       </div>

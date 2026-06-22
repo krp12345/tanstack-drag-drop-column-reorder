@@ -90,7 +90,7 @@ const rollup = (
   };
 };
 
-export const salesData: SalesRow[] = [
+const curatedSales: SalesRow[] = [
   rollup("Region", "North America", [
     rollup("Country", "United States", [
       rollup("City", "New York", [
@@ -141,3 +141,55 @@ export const salesData: SalesRow[] = [
     ]),
   ]),
 ];
+
+// ── Synthetic regions so the nested table has enough rows to virtualize ──
+// Generated deterministically (no Math.random) so the tree is stable across
+// renders. Expand the regions to scroll through hundreds of rolled-up rows.
+const REGION_NAMES = [
+  "Latin America", "Middle East", "Northern Europe", "Southeast Asia",
+  "Central Africa", "Oceania", "Caribbean", "South Asia", "East Asia",
+  "Eastern Europe", "Iberia", "Nordics", "Benelux", "Balkans", "Levant",
+];
+const COUNTRY_NAMES = [
+  "Brazil", "Mexico", "UAE", "Sweden", "Vietnam", "Kenya", "Chile",
+  "India", "Korea", "Poland", "Portugal", "Norway", "Greece", "Egypt",
+];
+const CITY_NAMES = [
+  "Metro", "Harbor", "Capital", "Lakeside", "Old Town", "Riverside",
+  "Uptown", "Midtown", "Bayview", "Hillcrest",
+];
+
+const spread = <T,>(arr: T[], i: number, salt: number) =>
+  arr[(i * 7 + salt * 13) % arr.length];
+
+const generatedSales: SalesRow[] = Array.from({ length: 80 }, (_, r) =>
+  rollup(
+    "Region",
+    `${spread(REGION_NAMES, r, 1)} ${r + 1}`,
+    Array.from({ length: 2 }, (_, c) =>
+      rollup(
+        "Country",
+        `${spread(COUNTRY_NAMES, r, c + 2)} ${r + 1}.${c + 1}`,
+        Array.from({ length: 2 }, (_, ci) =>
+          rollup(
+            "City",
+            `${spread(CITY_NAMES, r + ci, c + 3)} ${r + 1}.${c + 1}.${ci + 1}`,
+            Array.from({ length: 3 }, (_, s) => {
+              const seed = ((r + 1) * 31 + (c + 1) * 17 + (ci + 1) * 11 + s) % 100;
+              return store(
+                `Store ${r + 1}.${c + 1}.${ci + 1}.${s + 1}`,
+                300_000 + seed * 18_500,
+                8_000 + seed * 540,
+                200 + seed * 16,
+                34 + (seed % 14),
+                14 + (seed % 12)
+              );
+            })
+          )
+        )
+      )
+    )
+  )
+);
+
+export const salesData: SalesRow[] = [...curatedSales, ...generatedSales];

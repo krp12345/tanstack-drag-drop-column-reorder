@@ -24,7 +24,7 @@ export interface BudgetRow {
 const k = (n: number) => `$${(n / 1000).toFixed(0)}k`;
 const num = (n: number) => n.toLocaleString("en-US");
 
-export const budgetData: BudgetRow[] = [
+const curatedBudget: BudgetRow[] = [
   {
     name: "Americas",
     q1Rev: 4200000, q2Rev: 4810000, cogs: 1900000, opex: 1100000, newCust: 5400, churned: 820,
@@ -70,6 +70,52 @@ export const budgetData: BudgetRow[] = [
     ],
   },
 ];
+
+// Generated deterministically so the nested table has enough rows to virtualize.
+// Expand the divisions to scroll through hundreds of department/team rows.
+const DIVISIONS = ["APAC", "LATAM", "MEA", "Nordics", "DACH", "Benelux", "ANZ", "India", "Iberia", "Eastern Europe"];
+const DEPTS = ["Sales", "Marketing", "Engineering", "Operations", "Support"];
+const TEAMS = ["Enterprise", "SMB", "Demand Gen", "Brand", "Platform", "Field"];
+
+const roll = (i: number, base: number) => base + ((i * 137) % 90) * 10_000;
+
+const team = (i: number, name: string): BudgetRow => ({
+  name,
+  q1Rev: roll(i, 400_000), q2Rev: roll(i + 1, 450_000),
+  cogs: roll(i + 2, 200_000), opex: roll(i + 3, 140_000),
+  newCust: 300 + ((i * 37) % 1500), churned: 40 + ((i * 13) % 300),
+});
+
+/** Sum children into a parent so rolled-up totals stay consistent. */
+const branch = (name: string, subRows: BudgetRow[]): BudgetRow => {
+  const sum = (p: (r: BudgetRow) => number) => subRows.reduce((a, r) => a + p(r), 0);
+  return {
+    name,
+    q1Rev: sum((r) => r.q1Rev), q2Rev: sum((r) => r.q2Rev),
+    cogs: sum((r) => r.cogs), opex: sum((r) => r.opex),
+    newCust: sum((r) => r.newCust), churned: sum((r) => r.churned),
+    subRows,
+  };
+};
+
+const at = <T,>(arr: T[], i: number, salt: number) => arr[(i * 7 + salt * 13) % arr.length];
+
+const generatedBudget: BudgetRow[] = Array.from({ length: 60 }, (_, d) =>
+  branch(
+    `${at(DIVISIONS, d, 1)} ${d + 1}`,
+    Array.from({ length: 3 }, (_, dep) =>
+      branch(
+        `${at(DEPTS, d + dep, 2)} ${d + 1}.${dep + 1}`,
+        Array.from({ length: 3 }, (_, t) => {
+          const i = d * 9 + dep * 3 + t;
+          return team(i, `${at(TEAMS, i, 3)} ${d + 1}.${dep + 1}.${t + 1}`);
+        })
+      )
+    )
+  )
+);
+
+export const budgetData: BudgetRow[] = [...curatedBudget, ...generatedBudget];
 
 export const budgetColumns: ColumnDef<BudgetRow>[] = [
   { id: "org", header: "Organization", accessorKey: "name", size: 280 },

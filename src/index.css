@@ -88,12 +88,30 @@ body {
 .table {
   border-collapse: separate;
   border-spacing: 0;
-  width: 100%;
+  /* Fixed layout so each column honors its resized width instead of sizing to
+     content; the table's total width is set inline from getTotalSize(). No
+     `width: 100%` / `min-width` here — stretching to fill the wrapper would let
+     the browser redistribute space and shift other columns while one resizes. */
+  table-layout: fixed;
   font-size: 13px;
   white-space: nowrap;
 }
 
+/* Clip overflowing content so a narrowed column doesn't bleed past its edge. */
+.th__label,
+.td {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* ── Headers ── */
+/* Pin the header block so it stays in view as the virtualized body scrolls. */
+thead {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
 thead .th {
   position: relative;
   padding: 0;
@@ -168,6 +186,55 @@ thead .th--span-all {
 .th__label {
   flex: 1;
   text-align: center;
+}
+
+/* ── Column resizer ── */
+.resizer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  height: 100%;
+  width: 7px;
+  /* Reach slightly past the cell edge so the grab target straddles the border. */
+  transform: translateX(50%);
+  cursor: col-resize;
+  user-select: none;
+  touch-action: none;
+  z-index: 1;
+}
+
+.resizer::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 2px;
+  height: 100%;
+  background: transparent;
+  transition: background 0.15s;
+}
+
+.resizer:hover::before,
+.resizer--active::before {
+  background: var(--accent);
+}
+
+/* Keep the resize cursor while a drag is in progress anywhere on the cell. */
+.resizer--active {
+  cursor: col-resize;
+}
+
+/* ── Virtualization spacers ── */
+/* Empty rows that reserve the height of the off-screen (unmounted) rows so the
+   scrollbar tracks the full dataset. They carry no borders, padding or hover. */
+.row-spacer td {
+  padding: 0;
+  border: 0;
+}
+
+.row-spacer:hover td {
+  background: transparent;
 }
 
 /* ── Body ── */
