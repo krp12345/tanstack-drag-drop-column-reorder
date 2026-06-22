@@ -242,6 +242,7 @@ export function DataTable<T>({
 
   const virtualRows = rowVirtualizer.getVirtualItems();
   const totalHeight = rowVirtualizer.getTotalSize();
+  const totalWidth = table.getTotalSize();
   // Height of the unmounted rows above the first / below the last visible row.
   const paddingTop = virtualRows.length ? virtualRows[0].start : 0;
   const paddingBottom = virtualRows.length
@@ -298,98 +299,137 @@ export function DataTable<T>({
       onDragEnd={() => setActiveHeaderId(null)}
       onDragCancel={() => setActiveHeaderId(null)}
     >
-      <div
-        ref={scrollRef}
-        className={`table-wrap ${dragging ? "table-wrap--dragging" : ""}`}
-        style={{ maxHeight }}
-      >
-        <table className="table" style={{ width: table.getTotalSize() }}>
-          {/* One <col> per leaf column is the single source of truth for column
-              widths. Under `table-layout: fixed` these per-column widths take
-              priority and are unambiguous — unlike cell widths, which the browser
-              derives from the first row only and divides equally across grouped
-              `colSpan` headers, causing a resize to reflow a column's siblings.
-              Resizing one column rewrites just its <col>, so no other moves. */}
+      {/* One <col> per leaf column is the single source of truth for column
+          widths. Under `table-layout: fixed` these per-column widths take
+          priority and are unambiguous — unlike cell widths, which the browser
+          derives from the first row only and divides equally across grouped
+          `colSpan` headers, causing a resize to reflow a column's siblings.
+          Resizing one column rewrites just its <col>, so no other moves. The
+          header and body are separate tables, so each carries its own copy. */}
+      {(() => {
+        const colgroup = (
           <colgroup>
             {table.getVisibleLeafColumns().map((col) => (
               <col key={col.id} style={{ width: col.getSize() }} />
             ))}
           </colgroup>
-          <thead>
-            {headerGroups.map((headerGroup, rowIndex) => (
-              <tr key={headerGroup.id}>
-                {headerGroup.headers.map((header) => {
-                  const fullSpan = isFullSpanColumn(header);
-                  // A full-span column is emitted once, in the first row only.
-                  if (fullSpan && rowIndex !== 0) return null;
+        );
+        return (
+          // The outer wrap owns horizontal scroll only, so the header and body
+          // tables slide together and stay column-aligned. Vertical scroll lives
+          // on the inner body element alone — that keeps the vertical scrollbar
+          // beside the rows instead of running the full height past the header.
+          <div
+            className={`table-wrap ${dragging ? "table-wrap--dragging" : ""}`}
+          >
+            <table
+              className="table table--head"
+              style={{ width: totalWidth }}
+            >
+              {colgroup}
+              <thead>
+                {headerGroups.map((headerGroup, rowIndex) => (
+                  <tr key={headerGroup.id}>
+                    {headerGroup.headers.map((header) => {
+                      const fullSpan = isFullSpanColumn(header);
+                      // A full-span column is emitted once, in the first row only.
+                      if (fullSpan && rowIndex !== 0) return null;
 
-                  const showContent = !header.isPlaceholder || fullSpan;
-                  return (
-                    <DraggableHeader
-                      key={header.id}
-                      header={header}
-                      rowSpan={fullSpan ? headerDepth : undefined}
-                      showContent={showContent}
-                      // A full-span column is a top-level sibling that should
-                      // reorder among the other level-0 columns like any other
-                      // header — even when it doubles as the expander column,
-                      // which is otherwise locked in place.
-                      draggable={
-                        showContent &&
-                        (fullSpan ||
-                          header.column
-                            .getLeafColumns()
-                            .every((c) => c.id !== expanderId))
-                      }
-                    />
-                  );
-                })}
-              </tr>
-            ))}
-          </thead>
-          <tbody>
-            {/* Top spacer: stands in for the rows scrolled off above. */}
-            {paddingTop > 0 && (
-              <tr aria-hidden className="row-spacer">
-                <td colSpan={leafCount} style={{ height: paddingTop }} />
-              </tr>
-            )}
-            {virtualRows.map((virtualRow) => {
-              const row = rows[virtualRow.index];
-              return (
-                <tr
-                  key={row.id}
-                  // Let the virtualizer measure real heights and locate rows.
-                  data-index={virtualRow.index}
-                  ref={rowVirtualizer.measureElement}
-                  className={`row row--depth-${row.depth}`}
-                >
-                  {row.getVisibleCells().map((cell) => (
-                    <td key={cell.id} className="td">
-                      {cell.column.id === expanderId ? (
-                        <ExpanderCell row={row}>
-                          {flexRender(
-                            cell.column.columnDef.cell,
-                            cell.getContext()
-                          )}
-                        </ExpanderCell>
-                      ) : (
-                        flexRender(cell.column.columnDef.cell, cell.getContext())
-                      )}
-                    </td>
-                  ))}
-                </tr>
-              );
-            })}
-            {/* Bottom spacer: stands in for the rows scrolled off below. */}
-            {paddingBottom > 0 && (
-              <tr aria-hidden className="row-spacer">
-                <td colSpan={leafCount} style={{ height: paddingBottom }} />
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+                      const showContent = !header.isPlaceholder || fullSpan;
+                      return (
+                        <DraggableHeader
+                          key={header.id}
+                          header={header}
+                          rowSpan={fullSpan ? headerDepth : undefined}
+                          showContent={showContent}
+                          // A full-span column is a top-level sibling that should
+                          // reorder among the other level-0 columns like any other
+                          // header — even when it doubles as the expander column,
+                          // which is otherwise locked in place.
+                          draggable={
+                            showContent &&
+                            (fullSpan ||
+                              header.column
+                                .getLeafColumns()
+                                .every((c) => c.id !== expanderId))
+                          }
+                        />
+                      );
+                    })}
+                  </tr>
+                ))}
+              </thead>
+            </table>
+            <div
+              ref={scrollRef}
+              className="table-body-scroll"
+              // Seed a real height from the virtualizer's total size (capped by
+              // maxHeight). Without it the scroller would start at zero height —
+              // the header that used to seed it now lives in a separate table —
+              // and a zero-height viewport makes the virtualizer render no rows.
+              style={{
+                height: totalHeight,
+                maxHeight,
+                width: totalWidth,
+              }}
+            >
+              <table
+                className="table table--body"
+                style={{ width: totalWidth }}
+              >
+                {colgroup}
+                <tbody>
+                  {/* Top spacer: stands in for the rows scrolled off above. */}
+                  {paddingTop > 0 && (
+                    <tr aria-hidden className="row-spacer">
+                      <td colSpan={leafCount} style={{ height: paddingTop }} />
+                    </tr>
+                  )}
+                  {virtualRows.map((virtualRow) => {
+                    const row = rows[virtualRow.index];
+                    return (
+                      <tr
+                        key={row.id}
+                        // Let the virtualizer measure real heights and locate rows.
+                        data-index={virtualRow.index}
+                        ref={rowVirtualizer.measureElement}
+                        className={`row row--depth-${row.depth}`}
+                      >
+                        {row.getVisibleCells().map((cell) => (
+                          <td key={cell.id} className="td">
+                            {cell.column.id === expanderId ? (
+                              <ExpanderCell row={row}>
+                                {flexRender(
+                                  cell.column.columnDef.cell,
+                                  cell.getContext()
+                                )}
+                              </ExpanderCell>
+                            ) : (
+                              flexRender(
+                                cell.column.columnDef.cell,
+                                cell.getContext()
+                              )
+                            )}
+                          </td>
+                        ))}
+                      </tr>
+                    );
+                  })}
+                  {/* Bottom spacer: stands in for the rows scrolled off below. */}
+                  {paddingBottom > 0 && (
+                    <tr aria-hidden className="row-spacer">
+                      <td
+                        colSpan={leafCount}
+                        style={{ height: paddingBottom }}
+                      />
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        );
+      })()}
     </DndContext>
   );
 }

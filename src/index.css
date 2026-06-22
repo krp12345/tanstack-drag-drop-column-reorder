@@ -77,12 +77,23 @@ body {
 }
 
 /* ── Table shell ── */
+/* The wrap scrolls horizontally so the header and body tables move in lockstep
+   and stay column-aligned; it never scrolls vertically. */
 .table-wrap {
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 14px;
-  overflow: auto;
+  overflow-x: auto;
+  overflow-y: hidden;
   box-shadow: 0 10px 30px -12px rgba(15, 23, 42, 0.25);
+}
+
+/* The body is the only vertical scroller, so the vertical scrollbar sits beside
+   the rows and never runs alongside the header. Horizontal scroll is delegated
+   to .table-wrap, hence overflow-x: hidden here. */
+.table-body-scroll {
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .table {
@@ -105,13 +116,8 @@ body {
 }
 
 /* ── Headers ── */
-/* Pin the header block so it stays in view as the virtualized body scrolls. */
-thead {
-  position: sticky;
-  top: 0;
-  z-index: 2;
-}
-
+/* The header lives in its own non-scrolling table above the body, so it stays
+   in view as the virtualized body scrolls — no sticky positioning needed. */
 thead .th {
   position: relative;
   padding: 0;
