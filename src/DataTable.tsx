@@ -15,6 +15,7 @@ import {
 } from "@tanstack/react-table";
 import {
   DndContext,
+  DragOverlay,
   PointerSensor,
   pointerWithin,
   useSensor,
@@ -34,7 +35,11 @@ export interface DataTableProps<T> {
   getSubRows?: (row: T) => T[] | undefined;
   /** Column that hosts the expand/collapse control. Defaults to the first column. */
   expanderColumnId?: string;
-  /** Viewport height (px) for the scrolling/virtualized body. Defaults to 460. */
+  /**
+   * Optional cap (px) on the scrolling/virtualized body's height. When omitted,
+   * the body fills whatever vertical space its flex container leaves it, so the
+   * grid always spans the available area even when the data is short on rows.
+   */
   maxHeight?: number;
   /** Estimated row height (px) used to seed the virtualizer. Defaults to 37. */
   estimateRowHeight?: number;
@@ -188,7 +193,7 @@ export function DataTable<T>({
   columns,
   getSubRows,
   expanderColumnId,
-  maxHeight = 460,
+  maxHeight,
   estimateRowHeight = 37,
 }: DataTableProps<T>) {
   const [columnOrder, setColumnOrder] = useState<ColumnOrderState>([]);
@@ -221,6 +226,16 @@ export function DataTable<T>({
 
   const headerGroups = table.getHeaderGroups();
   const headerDepth = headerGroups.length;
+
+  // The header currently being dragged, looked up across every header row so the
+  // floating drag ghost (below) can mirror its label while the real columns
+  // reorder live underneath the cursor.
+  const activeHeader =
+    activeHeaderId != null
+      ? headerGroups
+          .flatMap((group) => group.headers)
+          .find((header) => header.id === activeHeaderId) ?? null
+      : null;
 
   // ── Row virtualization ──
   // The scroll viewport is the `.table-wrap` element. Only the rows inside the
@@ -373,12 +388,11 @@ export function DataTable<T>({
             <div
               ref={scrollRef}
               className="table-body-scroll"
-              // Seed a real height from the virtualizer's total size (capped by
-              // maxHeight). Without it the scroller would start at zero height —
-              // the header that used to seed it now lives in a separate table —
-              // and a zero-height viewport makes the virtualizer render no rows.
+              // No fixed height: the scroller fills its flex container (see the
+              // .table-body-scroll rule) so the grid always spans the available
+              // space, even when there aren't enough rows to fill it. `maxHeight`
+              // only applies when the caller asks to cap the body.
               style={{
-                height: totalHeight,
                 maxHeight,
                 width: totalWidth,
               }}
@@ -440,6 +454,25 @@ export function DataTable<T>({
           </div>
         );
       })()}
+
+      {/* AG-Grid-style floating duplicate of the dragged column header. dnd-kit
+          renders it in a portal sized to the source header, so it rides with the
+          cursor above everything (never clipped by the table's overflow) while
+          the real columns reorder live underneath. dropAnimation is disabled so
+          the ghost simply vanishes on release — the column is already in place. */}
+      <DragOverlay dropAnimation={null}>
+        {activeHeader ? (
+          <div className="col-drag-ghost">
+            <span className="grip">⠿</span>
+            <span className="col-drag-ghost__label">
+              {flexRender(
+                activeHeader.column.columnDef.header,
+                activeHeader.getContext()
+              )}
+            </span>
+          </div>
+        ) : null}
+      </DragOverlay>
     </DndContext>
   );
 }

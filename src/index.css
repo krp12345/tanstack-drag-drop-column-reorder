@@ -273,6 +273,41 @@ thead .th {
   text-align: center;
 }
 
+/* ── Column drag ghost (AG-Grid-style) ── */
+/* A floating duplicate of the dragged header that rides with the cursor. dnd-kit
+   renders it in a portal and sizes the wrapper to the source header, so the ghost
+   fills that box (width/height: 100%) and is never clipped by the table overflow.
+   The real columns reorder live underneath; this just shows what's being carried. */
+.col-drag-ghost {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  height: 100%;
+  padding: 9px 12px;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+  box-shadow: 0 14px 30px -10px rgba(37, 99, 235, 0.55);
+  cursor: grabbing;
+  opacity: 0.96;
+}
+
+.col-drag-ghost .grip {
+  color: var(--accent);
+  cursor: grabbing;
+}
+
+.col-drag-ghost__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* ── Column resizer ── */
 .resizer {
   position: absolute;
