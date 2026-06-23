@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   flexRender,
@@ -12,7 +12,21 @@ import {
   type Header,
   type Row,
   type Table,
+  type VisibilityState,
 } from "@tanstack/react-table";
+import {
+  autoUpdate,
+  flip,
+  FloatingFocusManager,
+  FloatingPortal,
+  offset,
+  shift,
+  useClick,
+  useDismiss,
+  useFloating,
+  useInteractions,
+  useRole,
+} from "@floating-ui/react";
 import {
   DndContext,
   DragOverlay,
@@ -28,6 +42,25 @@ import {
 
 const ROOT = "__root__";
 
+/**
+ * Persisted, emitted state for a single **leaf** column (parent/group headers are
+ * deliberately excluded — only the columns that actually hold data appear here).
+ * This is the shape stored under `storageKey` and handed to `onColumnConfigChange`
+ * whenever the user resizes, reorders, or hides/shows a column.
+ */
+export interface LeafColumnConfig {
+  /** Stable column id — the key used to restore order/visibility/width. */
+  id: string;
+  /** The column's header label (its display name). */
+  header: string;
+  /** True when the column is currently hidden from the grid. */
+  hidden: boolean;
+  /** Zero-based position of the column in the current left-to-right order. */
+  order: number;
+  /** Current column width in px, so resizes survive a reload. */
+  width: number;
+}
+
 export interface DataTableProps<T> {
   data: T[];
   columns: ColumnDef<T>[];
@@ -35,6 +68,23 @@ export interface DataTableProps<T> {
   getSubRows?: (row: T) => T[] | undefined;
   /** Column that hosts the expand/collapse control. Defaults to the first column. */
   expanderColumnId?: string;
+  /**
+   * Leaf column ids that may never be hidden. Their checkbox in the column
+   * chooser is locked on. The expander column is always treated as unhidable.
+   */
+  unhidableColumns?: string[];
+  /**
+   * When set, the leaf-column config (order, visibility, width) is persisted to
+   * `localStorage` under this key and restored on mount. Omit to keep the table
+   * stateless across reloads.
+   */
+  storageKey?: string;
+  /**
+   * Called with the full leaf-column config whenever the user resizes, reorders,
+   * or hides/shows a column (and once on mount with the initial state), so the
+   * consumer can react to layout changes.
+   */
+  onColumnConfigChange?: (config: LeafColumnConfig[]) => void;
   /**
    * Optional cap (px) on the scrolling/virtualized body's height. When omitted,
    * the body fills whatever vertical space its flex container leaves it, so the
@@ -188,25 +238,153 @@ function ExpanderCell<T>({
   );
 }
 
+/**
+ * A floating popover (Floating UI) anchored to a top-right button that lists
+ * every leaf column with a checkbox to show/hide it. Columns in `unhidable` are
+ * locked on. Toggling here flips the table's column-visibility state, which the
+ * persistence/emit effect below picks up like any other change.
+ */
+function ColumnChooser<T>({
+  table,
+  unhidable,
+}: {
+  table: Table<T>;
+  unhidable: Set<string>;
+}) {
+  const [open, setOpen] = useState(false);
+
+  const { refs, floatingStyles, context } = useFloating({
+    open,
+    onOpenChange: setOpen,
+    placement: "bottom-end",
+    middleware: [offset(8), flip({ padding: 8 }), shift({ padding: 8 })],
+    whileElementsMounted: autoUpdate,
+  });
+
+  const click = useClick(context);
+  const dismiss = useDismiss(context);
+  const role = useRole(context);
+  const { getReferenceProps, getFloatingProps } = useInteractions([
+    click,
+    dismiss,
+    role,
+  ]);
+
+  const leafColumns = table.getAllLeafColumns();
+  const hiddenCount = leafColumns.filter((c) => !c.getIsVisible()).length;
+
+  return (
+    <>
+      <button
+        type="button"
+        ref={refs.setReference}
+        className={`col-chooser__btn ${open ? "col-chooser__btn--open" : ""}`}
+        {...getReferenceProps()}
+      >
+        <span aria-hidden>▦</span> Columns
+        {hiddenCount > 0 && (
+          <span className="col-chooser__badge">{hiddenCount} hidden</span>
+        )}
+      </button>
+
+      {open && (
+        <FloatingPortal>
+          <FloatingFocusManager context={context} modal={false}>
+            <div
+              ref={refs.setFloating}
+              className="col-chooser__panel"
+              style={floatingStyles}
+              {...getFloatingProps()}
+            >
+              <div className="col-chooser__title">Show columns</div>
+              {leafColumns.map((column) => {
+                const locked = unhidable.has(column.id);
+                const label =
+                  typeof column.columnDef.header === "string"
+                    ? column.columnDef.header
+                    : column.id;
+                return (
+                  <label key={column.id} className="col-chooser__item">
+                    <input
+                      type="checkbox"
+                      checked={column.getIsVisible()}
+                      disabled={locked}
+                      onChange={column.getToggleVisibilityHandler()}
+                    />
+                    <span className="col-chooser__item-label">{label}</span>
+                    {locked && (
+                      <span className="col-chooser__lock" aria-hidden>
+                        🔒
+                      </span>
+                    )}
+                  </label>
+                );
+              })}
+            </div>
+          </FloatingFocusManager>
+        </FloatingPortal>
+      )}
+    </>
+  );
+}
+
+/** Read a persisted leaf-column config array from localStorage, if any. */
+function loadStoredConfig(storageKey?: string): LeafColumnConfig[] | null {
+  if (!storageKey || typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(storageKey);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? (parsed as LeafColumnConfig[]) : null;
+  } catch {
+    return null;
+  }
+}
+
 export function DataTable<T>({
   data,
   columns,
   getSubRows,
   expanderColumnId,
+  unhidableColumns,
+  storageKey,
+  onColumnConfigChange,
   maxHeight,
   estimateRowHeight = 37,
 }: DataTableProps<T>) {
-  const [columnOrder, setColumnOrder] = useState<ColumnOrderState>([]);
-  const [columnSizing, setColumnSizing] = useState<ColumnSizingState>({});
+  // Restore any persisted layout once, before the first render, so the table
+  // mounts already in its saved order / visibility / sizing.
+  const stored = useMemo(() => loadStoredConfig(storageKey), [storageKey]);
+
+  const [columnOrder, setColumnOrder] = useState<ColumnOrderState>(
+    () => stored?.map((c) => c.id) ?? []
+  );
+  const [columnSizing, setColumnSizing] = useState<ColumnSizingState>(() => {
+    const sizing: ColumnSizingState = {};
+    stored?.forEach((c) => {
+      if (typeof c.width === "number") sizing[c.id] = c.width;
+    });
+    return sizing;
+  });
+  const [columnVisibility, setColumnVisibility] = useState<VisibilityState>(
+    () => {
+      const visibility: VisibilityState = {};
+      stored?.forEach((c) => {
+        if (c.hidden) visibility[c.id] = false;
+      });
+      return visibility;
+    }
+  );
   const [expanded, setExpanded] = useState<ExpandedState>({});
   const [activeHeaderId, setActiveHeaderId] = useState<string | null>(null);
 
   const table: Table<T> = useReactTable({
     data,
     columns,
-    state: { columnOrder, columnSizing, expanded },
+    state: { columnOrder, columnSizing, columnVisibility, expanded },
     onColumnOrderChange: setColumnOrder,
     onColumnSizingChange: setColumnSizing,
+    onColumnVisibilityChange: setColumnVisibility,
     onExpandedChange: setExpanded,
     getSubRows,
     // Resize live as the handle moves, rather than only on release.
@@ -221,6 +399,56 @@ export function DataTable<T>({
   const expanderId = getSubRows
     ? expanderColumnId ?? table.getAllLeafColumns()[0]?.id
     : undefined;
+
+  // Columns the chooser must never let the user hide: caller-supplied ones plus
+  // the expander column (hiding it would strip every row's expand control).
+  const unhidable = useMemo(() => {
+    const set = new Set(unhidableColumns ?? []);
+    if (expanderId) set.add(expanderId);
+    return set;
+  }, [unhidableColumns, expanderId]);
+
+  // ── Persist & emit leaf-column config ──
+  // Build the canonical leaf-only config (parents/groups excluded) from the
+  // current order, visibility and sizing, then persist it under `storageKey` and
+  // hand it to the consumer. Runs after every resize / reorder / hide-show — and
+  // once on mount — because it depends on exactly those three state slices.
+  useEffect(() => {
+    const orderedIds = columnOrder.length
+      ? columnOrder
+      : table.getAllLeafColumns().map((c) => c.id);
+
+    const config: LeafColumnConfig[] = orderedIds.flatMap((id, index) => {
+      const column = table.getColumn(id);
+      if (!column) return [];
+      const header =
+        typeof column.columnDef.header === "string"
+          ? column.columnDef.header
+          : id;
+      return [
+        {
+          id,
+          header,
+          hidden: !column.getIsVisible(),
+          order: index,
+          width: column.getSize(),
+        },
+      ];
+    });
+
+    if (storageKey && typeof window !== "undefined") {
+      try {
+        window.localStorage.setItem(storageKey, JSON.stringify(config));
+      } catch {
+        // Ignore quota / privacy-mode write failures — persistence is best-effort.
+      }
+    }
+    onColumnConfigChange?.(config);
+    // `table` is stable across renders; the three state slices are the real
+    // triggers, and re-running on an unstable `onColumnConfigChange` identity
+    // would emit far more often than the documented resize/reorder/hide-show.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [columnOrder, columnVisibility, columnSizing, storageKey]);
 
   const dragging = activeHeaderId !== null;
 
@@ -324,6 +552,11 @@ export function DataTable<T>({
       onDragEnd={() => setActiveHeaderId(null)}
       onDragCancel={() => setActiveHeaderId(null)}
     >
+      {/* Toolbar above the grid; the column chooser sits at the top-right. */}
+      <div className="table-toolbar">
+        <ColumnChooser table={table} unhidable={unhidable} />
+      </div>
+
       {/* One <col> per leaf column is the single source of truth for column
           widths. Under `table-layout: fixed` these per-column widths take
           priority and are unambiguous — unlike cell widths, which the browser

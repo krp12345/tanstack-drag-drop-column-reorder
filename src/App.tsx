@@ -26,6 +26,11 @@ const routes: Route[] = [
         columns={columns}
         getSubRows={(row) => row.subRows}
         expanderColumnId="location"
+        storageKey="table:sales"
+        unhidableColumns={["netRevenue"]}
+        onColumnConfigChange={(config) =>
+          console.log("[sales] column config", config)
+        }
       />
     ),
   },
@@ -34,7 +39,14 @@ const routes: Route[] = [
     label: "Employee Directory",
     title: "Employee Directory",
     meta: "1 header level · flat rows (no getSubRows → no expander)",
-    render: () => <DataTable data={employees} columns={employeeColumns} />,
+    render: () => (
+      <DataTable
+        data={employees}
+        columns={employeeColumns}
+        storageKey="table:directory"
+        unhidableColumns={["name"]}
+      />
+    ),
   },
   {
     id: "budget",
@@ -47,6 +59,7 @@ const routes: Route[] = [
         columns={budgetColumns}
         getSubRows={(row) => row.subRows}
         expanderColumnId="org"
+        storageKey="table:budget"
       />
     ),
   },
@@ -54,8 +67,15 @@ const routes: Route[] = [
     id: "people",
     label: "People",
     title: "People (Virtualized)",
-    meta: "10,000 flat rows · only the visible window is mounted",
-    render: () => <DataTable data={people} columns={peopleColumns} />,
+    meta: "10,000 flat rows · 22 columns · only the visible window is mounted",
+    render: () => (
+      <DataTable
+        data={people}
+        columns={peopleColumns}
+        storageKey="table:people"
+        unhidableColumns={["id", "name"]}
+      />
+    ),
   },
 ];
 
